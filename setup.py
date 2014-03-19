@@ -8,5 +8,5 @@ setup(name='mollom_python',
       author='Huan Lai',
       author_email='huan.lai@acquia.com',
       url='https://github.com/Mollom/mollom_python',
-      requires=['requests_oauthlib'],
+      install_requires=['requests_oauthlib'],
      )

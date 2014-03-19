@@ -7,23 +7,23 @@ class MollomAuthenticationError(Exception):
     This usually occurs because of an invalid public_key, private_key combination.
     You can obtain your keys from mollom.com.
     """
-        
+
 class MollomInvalidRequestError(Exception):
     """Raised upon a faulty request sent by the client (4xx response code)."""
     def __init__(self, message):
         self.message = message
-    
+
 class MollomUnexpectedResponseError(Exception):
     """Raised upon an unexpected response from the Mollom service (5xx response code)."""
     def __init__(self, message):
         self.message = message
-        
+
 class MollomConnectionError(Exception):
     """Raised when we are unable to connect to the Mollom services."""
-        
+
 class Mollom(object):
     """Primary interaction point with all of the Mollom services."""
-    
+
     def __init__(self, public_key, private_key, rest_root="http://rest.mollom.com/v1", timeout=1.0, attempts=2):
         """Construct a Mollom object for making requests, taking in the public and private keys obtained from mollom.com.
         Keyword arguments:
@@ -32,33 +32,33 @@ class Mollom(object):
         rest_root -- Root URL of the Mollom rest service.
         timeout -- Maximum amount of time (seconds) to wait for the Mollom service to respond.
         attempts -- Maximum number of times a request is attempted before completely failing out in the case the previous request failed.
-            Sometimes the Mollom service can fail to respond due to high load. 
+            Sometimes the Mollom service can fail to respond due to high load.
             A subsequent request should usually succeed because of the global load balancer.
         """
         self._public_key = public_key
         self._private_key = private_key
         self._rest_root = rest_root
-        
+
         self._timeout = timeout
         self._attempts = attempts
-        
+
         self._client = OAuth1Session(client_key=public_key, client_secret=private_key)
         self._client.headers["Content-Type"] = "application/x-www-form-urlencoded"
         self._client.headers["Accept"] = "application/json"
-        
+
         self.__verify_keys()
-        
+
     def __verify_keys(self):
         """Verify that the public and private key combination is valid; raises MollomAuthenticationError otherwise"""
         verify_keys_endpoint = Template("${rest_root}/site/${public_key}")
         url = verify_keys_endpoint.substitute(rest_root=self._rest_root, public_key=self._public_key)
-        
+
         data = { "clientName": "mollom_python", "clientVersion": "1.0" }
-        
+
         response = self._client.post(url, data, timeout=self._timeout)
         if response.status_code != 200:
             raise MollomAuthenticationError
-        
+
     def __post_request(self, url, data):
         for attempt in xrange(0, self._attempts):
             try:
@@ -67,23 +67,23 @@ class Mollom(object):
                 if attempt + 1 == self._attempts:
                     # If this is the last attempt and we're still not successful, raise an exception
                     raise MollomConnectionError
-        
+
         if response.status_code >= 200 and response.status_code < 300:
             return response.json()
         elif response.status_code >= 400 and response.status_code < 500:
             raise MollomInvalidRequestError(response.text)
         else:
             raise MollomUnexpectedResponseError(response.text)
-        
-    def check_content(self, 
+
+    def check_content(self,
                       content_id=None,
-                      post_title=None, 
-                      post_body=None, 
-                      author_name=None, 
-                      author_url=None, 
-                      author_mail=None, 
-                      author_ip=None, 
-                      author_id=None, 
+                      post_title=None,
+                      post_body=None,
+                      author_name=None,
+                      author_url=None,
+                      author_mail=None,
+                      author_ip=None,
+                      author_id=None,
                       author_open_id=None,
                       allow_unsure=None,
                       strictness=None,
@@ -91,12 +91,12 @@ class Mollom(object):
                       honeypot=None
                       ):
         """Requests a ham/spam/unsure classification for content.
-        
+
         If rechecking or updating previously checked content, the content_id must be passed in.
         An example of this usage:
             * checking the subsequent post after previewing the content
             * checking the subsequent post after solving a CAPTCHA
-        
+
         Keyword arguments:
         content_id -- Unique identifier of the content to recheck/update.
         post_title -- The title of the content.
@@ -108,11 +108,11 @@ class Mollom(object):
         author_id -- The local user ID on the client site of the content author.
         author_open_id -- List of Open IDs of the content author.
         allow_unsure -- If false, Mollom will only return ham or spam. Defaults to true.
-        strictness -- A string denoting the strictness of Mollom checks to perform. 
+        strictness -- A string denoting the strictness of Mollom checks to perform.
             Can be "strict", "normal" or "relaxed". Defaults to "normal".
         content_type -- Type of content submitted. A type of "user" indicates user registration content.
         honeypot -- The value of a client-side honeypot form element, if non-empty.
-        
+
         Returns:
         content_id -- Unique identifier if the content checked.
         spam_classification -- "ham", "spam" or "unsure".
@@ -123,7 +123,7 @@ class Mollom(object):
         else:
             check_content_endpoint = Template("${rest_root}/content")
             url = check_content_endpoint.substitute(rest_root=self._rest_root)
-        
+
         data = {"checks": "spam"}
         if post_title:
             data["postTitle"] = post_title
@@ -149,42 +149,42 @@ class Mollom(object):
             data["contentType"] = content_type
         if honeypot:
             data["honeypot"] = honeypot
-            
+
         response = self.__post_request(url, data)
-        return response["content"]["id"], response["content"]["spamClassification"]
-    
+        return response["content"]
+
     def create_captcha(self, captcha_type="image", ssl=None, content_id=None):
         """Creates a CAPTCHA to be served to the end-user.
-        
+
         Keyword arguments:
         captcha_type -- Type of CAPTCHA to create: "image" or "audio". Defaults to "image".
         ssl -- True for a CAPTCHA served over https. Defaults to False.
         content_id -- Unique identifier of the content to link the CAPTCHA to, in case the content was unsure.
-        
+
         Returns:
         captcha_id -- Unique identifier of the CAPTCHA created.
         url -- Path to the CAPTCHA resource to be served to the end-user.
         """
         create_captcha_endpoint = Template("${rest_root}/captcha")
         url = create_captcha_endpoint.substitute(rest_root=self._rest_root)
-        
+
         data = {"type": captcha_type}
         if ssl:
             data["ssl"] = 1 if ssl else 0
         if content_id:
             data["contentId"] = content_id
-        
+
         response = self.__post_request(url, data)
         return response["captcha"]["id"], response["captcha"]["url"]
-    
+
     def check_captcha(self,
                       captcha_id,
                       solution,
-                      author_name=None, 
-                      author_url=None, 
-                      author_mail=None, 
-                      author_ip=None, 
-                      author_id=None, 
+                      author_name=None,
+                      author_url=None,
+                      author_mail=None,
+                      author_ip=None,
+                      author_id=None,
                       author_open_id=None,
                       honeypot=None
                       ):
@@ -200,23 +200,23 @@ class Mollom(object):
         author_id -- The local user ID on the client site of the content author.
         author_open_id -- List of Open IDs of the content author.
         honeypot -- The value of a client-side honeypot form element, if non-empty.
-        
+
         Returns:
-        solved -- Boolean whether or not the CAPTCHA was solved correctly. 
+        solved -- Boolean whether or not the CAPTCHA was solved correctly.
             If the CAPTCHA is associated with an unsure contents, it is recommended to recheck the content.
         """
         check_catpcha_endpoint = Template("${rest_root}/captcha/${captcha_id}")
         url = check_catpcha_endpoint.substitute(rest_root=self._rest_root, captcha_id=captcha_id)
-        
+
         data = {"solution": solution}
-        
+
         response = self.__post_request(url, data)
         # Mollom returns "1" for success and "0" for failure
         return response["captcha"]["solved"] == "1"
-        
+
     def send_feedback(self, content_id, reason):
-        """Sends feedback to Mollom in the case of false negative or false positives. 
-        
+        """Sends feedback to Mollom in the case of false negative or false positives.
+
         Keyword arguments:
         content_id -- Unique identifier of the content to submit feedback about.
         reason -- Feedback to give. Can be: "approve", "spam", "unwanted".
@@ -226,7 +226,7 @@ class Mollom(object):
         """
         send_feedback_endpoint = Template("${rest_root}/feedback")
         url = send_feedback_endpoint.substitute(rest_root=self._rest_root)
-        
+
         data = {"contentId": content_id, "reason": reason}
-        
+
         self.__post_request(url, data)
